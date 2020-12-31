@@ -1,9 +1,13 @@
 [package]
 name = "derivetable_example"
-version = "0.0.0"
+version = "0.0.1"
 authors = ["Milan Markovic <zivotinja@gmail.com>"]
 edition = "2018"
 publish = false
 
 [dependencies]
 derivetable = { path = "../" }
+csv = { version = "1.1.5" }
+chrono = { version = "*", features = ["serde"] }
+serde = "1"
+serde_derive = "*"
