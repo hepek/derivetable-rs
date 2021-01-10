@@ -1,6 +1,5 @@
 use derivetable::*;
-///Scratch
-//////
+use rusqlite::*;
 
 #[derivetable(Clone, Debug)]
 #[derive(Table, Debug, Clone)]
@@ -30,11 +29,9 @@ fn insert_and_remove() {
     assert!(test.insert(Person { ident: 1234, name: "Zoran".to_string(),  ..test_row.clone() }).is_ok());
 }
 
-
 // main test compares sqlite performance vs derivetable performance on a simple task
 // it reads nyc yellow cab trip records file from stdin, parses the CSV and inserts into a table
 // then performs some simple queries
-
 
 use csv;
 use serde_derive;
@@ -82,6 +79,7 @@ fn money_parse<'de, D>(d: D) -> Result<u32, D::Error>
 #[derive(Table, Debug, Clone, serde_derive::Deserialize)]
 #[allow(non_snake_case)]
 struct CabTrip {
+    #[hindex]
     VendorID: Option<u32>,
     #[serde(deserialize_with = "date_time_parse")]
     #[index]
@@ -90,7 +88,7 @@ struct CabTrip {
     #[index]
     tpep_dropoff_datetime: chrono::NaiveDateTime,
     passenger_count: Option<u8>,
-    trip_distance: f32,
+    trip_distance: f64,
     RatecodeID: Option<u32>,
     store_and_fwd_flag: String,
     PULocationID: Option<u32>,
@@ -99,33 +97,32 @@ struct CabTrip {
     #[serde(deserialize_with = "money_parse")]
     #[index]
     fare_amount: u32,
-    extra: Option<f32>,
-    mta_tax: Option<f32>,
-    tip_amount: Option<f32>,
-    tolls_amount: Option<f32>,
-    improvement_surcharge: Option<f32>,
-    total_amount: Option<f32>,
-    congestion_surcharge: Option<f32>,
+    extra: Option<f64>,
+    mta_tax: Option<f64>,
+    tip_amount: Option<f64>,
+    tolls_amount: Option<f64>,
+    improvement_surcharge: Option<f64>,
+    total_amount: Option<f64>,
+    congestion_surcharge: Option<f64>,
 }
 
 fn main() {
     let mut rdr = csv::Reader::from_reader(std::io::stdin());
     println!("starting, {}", rdr.has_headers());
     println!("sizeof Row: {}", std::mem::size_of::<CabTrip>());
-    //let mut trips = vec![];
+    let mut trips = vec![];
 
     let now = std::time::Instant::now();
-    let mut tript = CabTripTable::new();
     for record in rdr.deserialize()  {
         let r: CabTrip = record.unwrap();
-        //trips.push(r);
-        tript.insert(r).unwrap();
+        trips.push(r);
     }
+    let trips2 = trips.clone();
     
-    let num = tript.data.len(); //trips.len();
+    let num = trips.len();
     println!("total trips: {}, time: {}s", num, now.elapsed().as_secs_f64());
     
-    /*
+    let mut tript = CabTripTable::new();
     let now = std::time::Instant::now();
     let mut small_fares = 0usize;
     for record in trips.iter() {
@@ -139,7 +136,6 @@ fn main() {
     for record in trips {
         tript.insert(record).unwrap();
     }
-    */
 
     println!("table insert time: {}s, per record: {}ms", now.elapsed().as_secs_f64(), now.elapsed().as_secs_f64()*1000.0/(num as f64));
 
@@ -151,8 +147,6 @@ fn main() {
 
     println!("total fare collected: {}USD, iter time: {}ms", fare as f64/100.0, now.elapsed().as_secs_f64()*1000.0);
 
-
-    /*
     let now = std::time::Instant::now();
     let mut small_fares = 0usize;
     for (_, _) in tript.range_by_fare_amount(0..500) {
@@ -167,5 +161,90 @@ fn main() {
     }
 
     println!("Num fares == 12.34$: {}, iter time: {}ms", exact_amount, now.elapsed().as_secs_f64()*1000.0);
-    */
+
+    // Sqlite3 memory comparison
+    let conn = Connection::open_in_memory().unwrap();
+
+    conn.execute(
+        "CREATE TABLE CabTrip (
+            id  INTEGER PRIMARY KEY,
+            VendorID    INTEGER,
+            tpep_pickup_datetime TEXT,
+            tpep_dropoff_datetime TEXT,
+            passenger_count INTEGER,
+            trip_distance REAL,
+            RatecodeID INTEGER,
+            store_and_fwd_flag TEXT,
+            PULocationID INTEGER,
+            DOLocationID INTEGER,
+            payment_type INTEGER,
+            fare_amount INTEGER,
+            extra INTEGER,
+            mta_tax INTEGER,
+            tip_amount REAL,
+            tolls_amount REAL,
+            improvement_surcharge REAL,
+            total_amount REAL,
+            congestion_surcharge REAL
+            );",
+        params![],
+    ).unwrap();
+
+    conn.execute("CREATE INDEX vendorid on CabTrip(VendorId);", params![]).unwrap();
+    conn.execute("CREATE INDEX pickup on CabTrip( tpep_pickup_datetime );", params![]).unwrap();
+    conn.execute("CREATE INDEX dropoff on CabTrip( tpep_dropoff_datetime );", params![]).unwrap();
+    conn.execute("CREATE INDEX amt on CabTrip( fare_amount );", params![]).unwrap();
+
+    let now = std::time::Instant::now();
+    for record in trips2 {
+        let pickup = record.tpep_pickup_datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+        let dropoff = record.tpep_dropoff_datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute("INSERT INTO CabTrip ( VendorID, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count, trip_distance, RatecodeID,
+            store_and_fwd_flag, PULocationID, DOLocationID, payment_type, fare_amount,
+            extra, mta_tax, tip_amount, tolls_amount, improvement_surcharge,
+            total_amount, congestion_surcharge) VALUES 
+            ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18 );",
+            params![
+            &record.VendorID,
+            &pickup,
+            &dropoff,
+            &record.passenger_count,
+            &record.trip_distance,
+            &record.RatecodeID,
+            &record.store_and_fwd_flag,
+            &record.PULocationID,
+            &record.DOLocationID,
+            &record.payment_type,
+            &record.fare_amount,
+            &record.extra,
+            &record.mta_tax,
+            &record.tip_amount,
+            &record.tolls_amount,
+            &record.improvement_surcharge,
+            &record.total_amount,
+            &record.congestion_surcharge,
+            ]).unwrap();
+    }
+
+    println!("SQLITE3 insert time: {}s, per record: {}ms", now.elapsed().as_secs_f64(), now.elapsed().as_secs_f64()*1000.0/(num as f64));
+
+    let now = std::time::Instant::now();
+    let mut stmt = conn.prepare("SELECT * from CabTrip WHERE fare_amount < 500;").unwrap();
+
+    let mut small_fares = 0usize;
+    let mut q = stmt.query(params![]).unwrap();
+    while let Some(_row) = q.next().unwrap() {
+        small_fares += 1;
+    }
+    println!("Num fares < 5$: {}, iter time: {}ms", small_fares, now.elapsed().as_secs_f64()*1000.0);
+
+    let now = std::time::Instant::now();
+    let mut exact_amount = 0usize;
+    let mut stmt = conn.prepare("SELECT * from CabTrip WHERE fare_amount = 1234;").unwrap();
+    let mut q = stmt.query(params![]).unwrap();
+    while let Some(_row) = q.next().unwrap() {
+        exact_amount += 1;
+    }
+
+    println!("Num fares == 12.34$: {}, iter time: {}ms", exact_amount, now.elapsed().as_secs_f64()*1000.0);
 }

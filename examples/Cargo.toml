@@ -11,3 +11,4 @@ csv = { version = "1.1.5" }
 chrono = { version = "*", features = ["serde"] }
 serde = "1"
 serde_derive = "*"
+rusqlite = "0.24.2"
