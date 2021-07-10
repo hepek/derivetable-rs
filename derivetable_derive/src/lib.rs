@@ -368,7 +368,8 @@ pub fn derivetable(input: TokenStream) -> TokenStream {
         }
     };
 
-        // println!("{}", &expanded.to_string());
+    // to debug the proc macro uncomment this
+    //println!("{}", &expanded.to_string());
 
     TokenStream::from(expanded)
 }

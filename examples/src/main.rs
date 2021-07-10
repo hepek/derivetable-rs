@@ -1,8 +1,8 @@
 use derivetable::*;
 use rusqlite::*;
 
-#[derivetable(Clone, Debug)]
 #[derive(Table, Debug, Clone)]
+#[derivetable(Clone, Debug)]
 pub struct Person {
     #[index]
     name: String,
@@ -75,8 +75,8 @@ fn money_parse<'de, D>(d: D) -> Result<u32, D::Error>
     Ok((f * 100.0) as u32)
 }
 
-#[derivetable(Debug)]
 #[derive(Table, Debug, Clone, serde_derive::Deserialize)]
+#[derivetable(Debug)]
 #[allow(non_snake_case)]
 struct CabTrip {
     #[hindex]
@@ -118,6 +118,7 @@ fn main() {
         trips.push(r);
     }
     let trips2 = trips.clone();
+    println!("================= DERIVETABLE =====================");
     
     let num = trips.len();
     println!("total trips: {}, time: {}s", num, now.elapsed().as_secs_f64());
@@ -162,6 +163,8 @@ fn main() {
 
     println!("Num fares == 12.34$: {}, iter time: {}ms", exact_amount, now.elapsed().as_secs_f64()*1000.0);
 
+
+    println!("================= SQLITE3 MEMORY =====================");
     // Sqlite3 memory comparison
     let conn = Connection::open_in_memory().unwrap();
 
